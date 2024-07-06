@@ -20,7 +20,8 @@ tracy = ["dep:tracy-client", "profiling/profile-with-tracy"]
 [dependencies]
 parking_lot = "0.12" # Used for Mutex & RwLock. Note that wgpu already depends on parking_lot as well.
 thiserror = "1"
-wgpu = "0.20.0"
+#wgpu = "0.20.0"
+wgpu = { git = "https://github.com/gfx-rs/wgpu"}
 
 tracy-client = { version = "0.17", optional = true }
 
@@ -30,3 +31,4 @@ futures-lite = "2"
 profiling = { version = "1" }
 tracy-client = "0.17.0"
 winit = "0.30"
+bitflags = "2.6"

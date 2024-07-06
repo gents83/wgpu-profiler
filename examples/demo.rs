@@ -133,6 +133,7 @@ impl GfxState {
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
+            cache: None,
         });
 
         // Create a new profiler instance.
