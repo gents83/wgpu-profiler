@@ -24,7 +24,7 @@ Create a new profiler object:
 ```rust
 use wgpu_profiler::{wgpu_profiler, GpuProfiler, GpuProfilerSettings};
 // ...
-let mut profiler = GpuProfiler::new(GpuProfilerSettings::default());
+let mut profiler = GpuProfiler::new(GpuProfilerSettings::default()).unwrap();
 ```
 
 Now you can start creating profiler scopes:

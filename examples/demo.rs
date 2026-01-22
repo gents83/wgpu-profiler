@@ -67,7 +67,7 @@ struct GfxState {
 impl GfxState {
     async fn new(window: &Arc<winit::window::Window>) -> Self {
         let size = window.inner_size();
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
         let surface = instance
             .create_surface(window.clone())
             .expect("Failed to create surface.");
@@ -88,8 +88,8 @@ impl GfxState {
                     label: None,
                     required_features: adapter.features() & GpuProfiler::ALL_WGPU_TIMER_FEATURES,
                     required_limits: wgpu::Limits::default(),
+                    ..Default::default()
                 },
-                None,
             )
             .await
             .expect("Failed to create device");
@@ -119,13 +119,13 @@ impl GfxState {
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(swapchain_format.into())],
             }),
@@ -315,6 +315,7 @@ fn draw(
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: wgpu::StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 ..Default::default()
             },
@@ -350,6 +351,7 @@ fn draw(
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 depth_stencil_attachment: None,
                 occlusion_query_set: None,

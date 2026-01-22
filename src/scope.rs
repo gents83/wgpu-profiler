@@ -107,7 +107,7 @@ macro_rules! impl_scope_ext {
                 label: impl Into<String>,
                 device: &wgpu::Device,
                 pass_descriptor: wgpu::RenderPassDescriptor,
-            ) -> OwningScope<wgpu::RenderPass> {
+            ) -> OwningScope<'_, wgpu::RenderPass<'_>> {
                 let child_scope = self
                     .profiler
                     .begin_pass_query(label, &mut self.recorder, device)
