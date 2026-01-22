@@ -1,12 +1,44 @@
 # Change Log
 
-## Unreleased
+## 0.25.0
+* Update to wgpu 27.0.0, by @bluebear94 in [#101](https://github.com/Wumpf/wgpu-profiler/pull/101)
+
+## 0.24.0
+* Update to wgpu 26.0.0, by @waywardmonkeys in [#95](https://github.com/Wumpf/wgpu-profiler/pull/95)
+
+## 0.23.0
+* Update to wgpu 25.0.0, by @waywardmonkeys in [#95](https://github.com/Wumpf/wgpu-profiler/pull/95)
+
+## 0.22.0
+* Device no longer needs to be passed for scope/start-query/end-query, in [#93](https://github.com/Wumpf/wgpu-profiler/pull/93)
+
+## 0.21.1
+* Add accessor for settings.
+
+## 0.21.0
+* Integration with puffin, by @gonkalbell in [#81](https://github.com/Wumpf/wgpu-profiler/pull/81)
+
+## 0.20.0
+* Update to tracy-client 0.18.0, update to thiserror 2, in [#91](https://github.com/Wumpf/wgpu-profiler/pull/91)
+* Update to wgpu 24.0.0, by @songhuaixu in [#90](https://github.com/Wumpf/wgpu-profiler/pull/90)
+
+## 0.19.0
+* Update to wgpu 23.0.0, by @waywardmonkeys in [#88](https://github.com/Wumpf/wgpu-profiler/pull/88)
+
+## 0.18.2
+* Fix `resolve_queries` calls per frame causing invalid buffer copy operations, in [#83](https://github.com/Wumpf/wgpu-profiler/pull/83)
+
+## 0.18.1
+* Fix issues with multiple calls to `GpuProfiler::resolve_queries` per frame, in [#79](https://github.com/Wumpf/wgpu-profiler/pull/79)
+
+## 0.18.0
+* Update to wgpu 22.1.0, by @waywardmonkeys in [#75](https://github.com/Wumpf/wgpu-profiler/pull/75)
 
 ## 0.17.0
-* update to wgpu 0.20
+* Update to wgpu 0.20
 * `GpuTimerQueryResult` are now also produced when timing is disabled for that scope
   * `GpuTimerQueryResult::time` is an `Option` now
-* update tracy client to 0.17.0
+* Update tracy client to 0.17.0
 
 ## 0.16.2
 
