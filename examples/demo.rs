@@ -7,6 +7,13 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
 };
 
+#[cfg(feature = "puffin")]
+// Since the timing information we get from WGPU may be several frames behind the CPU, we can't report these frames to
+// the singleton returned by `puffin::GlobalProfiler::lock`. Instead, we need our own `puffin::GlobalProfiler` that we
+// can be several frames behind puffin's main global profiler singleton.
+static PUFFIN_GPU_PROFILER: std::sync::LazyLock<std::sync::Mutex<puffin::GlobalProfiler>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(puffin::GlobalProfiler::default()));
+
 fn scopes_to_console_recursive(results: &[GpuTimerQueryResult], indentation: u32) {
     for scope in results {
         if indentation > 0 {
@@ -34,7 +41,7 @@ fn console_output(results: &Option<Vec<GpuTimerQueryResult>>, enabled_features: 
     print!("\x1B[2J\x1B[1;1H"); // Clear terminal and put cursor to first row first column
     println!("Welcome to wgpu_profiler demo!");
     println!();
-    println!("Enabled device features: {:?}", enabled_features);
+    println!("Enabled device features: {enabled_features:?}");
     println!();
     println!(
         "Press space to write out a trace file that can be viewed in chrome's chrome://tracing"
@@ -83,14 +90,10 @@ impl GfxState {
         dbg!(adapter.features());
 
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: None,
-                    required_features: adapter.features() & GpuProfiler::ALL_WGPU_TIMER_FEATURES,
-                    required_limits: wgpu::Limits::default(),
-                    ..Default::default()
-                },
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                required_features: adapter.features() & GpuProfiler::ALL_WGPU_TIMER_FEATURES,
+                ..Default::default()
+            })
             .await
             .expect("Failed to create device");
 
@@ -111,6 +114,7 @@ impl GfxState {
                 .get_default_config(&adapter, size.width, size.height)
                 .unwrap()
         };
+        surface.configure(&device, &surface_desc);
 
         let swapchain_format = surface_desc.format;
 
@@ -148,15 +152,17 @@ impl GfxState {
             wgpu_profiler::CreationError::TracyClientNotRunning
             | wgpu_profiler::CreationError::TracyGpuContextCreationError(_) => {
                 println!("Failed to connect to Tracy. Continuing without Tracy integration.");
-                GpuProfiler::new(GpuProfilerSettings::default()).expect("Failed to create profiler")
+                GpuProfiler::new(&device, GpuProfilerSettings::default())
+                    .expect("Failed to create profiler")
             }
             _ => {
-                panic!("Failed to create profiler: {}", err);
+                panic!("Failed to create profiler: {err}");
             }
         });
+
         #[cfg(not(feature = "tracy"))]
-        let profiler =
-            GpuProfiler::new(GpuProfilerSettings::default()).expect("Failed to create profiler");
+        let profiler = GpuProfiler::new(&device, GpuProfilerSettings::default())
+            .expect("Failed to create profiler");
 
         Self {
             surface,
@@ -231,7 +237,7 @@ impl ApplicationHandler<()> for State {
                 let mut encoder =
                     device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-                draw(profiler, &mut encoder, &frame_view, device, render_pipeline);
+                draw(profiler, &mut encoder, &frame_view, render_pipeline);
 
                 // Resolves any queries that might be in flight.
                 profiler.resolve_queries(&mut encoder);
@@ -253,6 +259,15 @@ impl ApplicationHandler<()> for State {
                 self.latest_profiler_results =
                     profiler.process_finished_frame(queue.get_timestamp_period());
                 console_output(&self.latest_profiler_results, device.features());
+                #[cfg(feature = "puffin")]
+                {
+                    let mut gpu_profiler = PUFFIN_GPU_PROFILER.lock().unwrap();
+                    wgpu_profiler::puffin::output_frame_to_puffin(
+                        &mut gpu_profiler,
+                        self.latest_profiler_results.as_deref().unwrap_or_default(),
+                    );
+                    gpu_profiler.new_frame();
+                }
             }
 
             WindowEvent::KeyboardInput {
@@ -293,11 +308,10 @@ fn draw(
     profiler: &GpuProfiler,
     encoder: &mut wgpu::CommandEncoder,
     view: &wgpu::TextureView,
-    device: &wgpu::Device,
     render_pipeline: &wgpu::RenderPipeline,
 ) {
     // Create a new profiling scope that we nest the other scopes in.
-    let mut scope = profiler.scope("rendering", encoder, device);
+    let mut scope = profiler.scope("rendering", encoder);
     // For demonstration purposes we divide our scene into two render passes.
     {
         // Once we created a scope, we can use it to create nested scopes within.
@@ -305,17 +319,16 @@ fn draw(
         // But just as before, it behaves like a transparent wrapper, so you can use it just like a normal render pass.
         let mut rpass = scope.scoped_render_pass(
             "render pass top",
-            device,
             wgpu::RenderPassDescriptor {
                 label: None,
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: wgpu::StoreOp::Store,
                     },
-                    depth_slice: None,
                 })],
                 ..Default::default()
             },
@@ -326,11 +339,11 @@ fn draw(
         // Sub-scopes within the pass only work if wgpu::Features::TIMESTAMP_QUERY_INSIDE_PASSES is enabled.
         // If this feature is lacking, no timings will be taken.
         {
-            let mut rpass = rpass.scope("fractal 0", device);
+            let mut rpass = rpass.scope("fractal 0");
             rpass.draw(0..6, 0..1);
         };
         {
-            let mut rpass = rpass.scope("fractal 1", device);
+            let mut rpass = rpass.scope("fractal 1");
             rpass.draw(0..6, 1..2);
         }
     }
@@ -338,7 +351,7 @@ fn draw(
         // It's also possible to take timings by hand, manually calling `begin_query` and `end_query`.
         // This is generally not recommended as it's very easy to mess up by accident :)
         let pass_scope = profiler
-            .begin_pass_query("render pass bottom", scope.recorder, device)
+            .begin_pass_query("render pass bottom", scope.recorder)
             .with_parent(scope.scope.as_ref());
         let mut rpass = scope
             .recorder
@@ -346,12 +359,12 @@ fn draw(
                 label: None,
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
                     },
-                    depth_slice: None,
                 })],
                 depth_stencil_attachment: None,
                 occlusion_query_set: None,
@@ -364,7 +377,7 @@ fn draw(
         // Again, to do any actual timing, you need to enable wgpu::Features::TIMESTAMP_QUERY_INSIDE_PASSES.
         {
             let query = profiler
-                .begin_query("fractal 2", &mut rpass, device)
+                .begin_query("fractal 2", &mut rpass)
                 .with_parent(Some(&pass_scope));
             rpass.draw(0..6, 2..3);
 
@@ -373,7 +386,7 @@ fn draw(
         }
         // Another variant is to use `ManualOwningScope`, forming a middle ground between no scope helpers and fully automatic scope closing.
         let mut rpass = {
-            let mut rpass = profiler.manual_owning_scope("fractal 3", rpass, device);
+            let mut rpass = profiler.manual_owning_scope("fractal 3", rpass);
             rpass.draw(0..6, 3..4);
 
             // Don't forget to end the scope.
@@ -387,9 +400,24 @@ fn draw(
 }
 
 fn main() {
+    #[cfg(feature = "tracy")]
     tracy_client::Client::start();
+
     //env_logger::init_from_env(env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "warn"));
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
+
+    #[cfg(feature = "puffin")]
+    let (_cpu_server, _gpu_server) = {
+        puffin::set_scopes_on(true);
+        let cpu_server =
+            puffin_http::Server::new(&format!("0.0.0.0:{}", puffin_http::DEFAULT_PORT)).unwrap();
+        let gpu_server = puffin_http::Server::new_custom(
+            &format!("0.0.0.0:{}", puffin_http::DEFAULT_PORT + 1),
+            |sink| PUFFIN_GPU_PROFILER.lock().unwrap().add_sink(sink),
+            |id| _ = PUFFIN_GPU_PROFILER.lock().unwrap().remove_sink(id),
+        );
+        (cpu_server, gpu_server)
+    };
     let _ = event_loop.run_app(&mut State::default());
 }

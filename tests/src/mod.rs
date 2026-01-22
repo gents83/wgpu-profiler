@@ -1,6 +1,7 @@
 mod dropped_frame_handling;
 mod errors;
 mod interleaved_command_buffer;
+mod multiple_resolves_per_frame;
 mod nested_scopes;
 
 pub fn create_device(
@@ -18,12 +19,10 @@ pub fn create_device(
             .await
             .unwrap();
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    required_features: features,
-                    ..Default::default()
-                },
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                required_features: features,
+                ..Default::default()
+            })
             .await?;
         Ok((adapter.get_info().backend, device, queue))
     }

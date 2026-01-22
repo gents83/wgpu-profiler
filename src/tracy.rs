@@ -25,22 +25,27 @@ pub fn create_tracy_gpu_client(
         mapped_at_creation: false,
     });
 
-    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("wgpu-profiler gpu -> cpu sync cmd_buf"),
+    let mut timestamp_encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("wgpu-profiler gpu -> cpu query timestamp"),
     });
-    encoder.write_timestamp(&query_set, 0);
-    encoder.resolve_query_set(&query_set, 0..1, &resolve_buffer, 0);
-    encoder.copy_buffer_to_buffer(&resolve_buffer, 0, &map_buffer, 0, wgpu::QUERY_SIZE as _);
-    queue.submit(Some(encoder.finish()));
+    timestamp_encoder.write_timestamp(&query_set, 0);
+    timestamp_encoder.resolve_query_set(&query_set, 0..1, &resolve_buffer, 0);
+    // Workaround for https://github.com/gfx-rs/wgpu/issues/6406
+    // TODO when that bug is fixed, merge these encoders together again
+    let mut copy_encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("wgpu-profiler gpu -> cpu copy timestamp"),
+    });
+    copy_encoder.copy_buffer_to_buffer(&resolve_buffer, 0, &map_buffer, 0, wgpu::QUERY_SIZE as u64);
+    queue.submit([timestamp_encoder.finish(), copy_encoder.finish()]);
 
     map_buffer.slice(..).map_async(wgpu::MapMode::Read, |_| ());
-    device.poll(wgpu::Maintain::Wait);
+    device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
 
     let view = map_buffer.slice(..).get_mapped_range();
     let timestamp: i64 = i64::from_le_bytes((*view).try_into().unwrap());
 
     let tracy_backend = match backend {
-        wgpu::Backend::Empty | wgpu::Backend::Metal | wgpu::Backend::BrowserWebGpu => {
+        wgpu::Backend::Noop | wgpu::Backend::Metal | wgpu::Backend::BrowserWebGpu => {
             tracy_client::GpuContextType::Invalid
         }
         wgpu::Backend::Vulkan => tracy_client::GpuContextType::Vulkan,
